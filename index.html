@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bouh Pokedox</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Roboto+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        html { scroll-behavior: smooth; }
+        body { font-family: 'Roboto Mono', monospace; background-color: #1a1a2e; color: #e0e0e0; }
+        .font-title { font-family: 'Press Start 2P', cursive; }
+        .pokedex-screen { background-color: #2c3e50; border: 8px solid #bdc3c7; border-radius: 15px; box-shadow: 0 0 20px rgba(0,0,0,0.5) inset; }
+        .user-card { background-color: rgba(255, 255, 255, 0.05); border: 2px solid rgba(255, 255, 255, 0.2); transition: transform 0.2s, box-shadow 0.2s; }
+        .user-card:hover { transform: translateY(-5px); box-shadow: 0 10px 20px rgba(46, 204, 113, 0.3); border-color: #2ecc71; }
+        .modal-container { background-color: rgba(0, 0, 0, 0.8); backdrop-filter: blur(5px); }
+        .modal-content-body { background: linear-gradient(to right, #2C5364, #203A43, #0F2027); border: 4px solid #3498db; }
+        .letter-header { grid-column: 1 / -1; color: #f1c40f; font-size: 2.5rem; margin-top: 1.5rem; padding-left: 0.5rem; border-bottom: 2px solid #f1c40f; }
+        #alphaNav { position: fixed; top: 50%; right: 0; transform: translateY(-50%); background-color: rgba(0,0,0,0.5); padding: 8px 4px; border-radius: 10px 0 0 10px; display: flex; flex-direction: column; gap: 2px; z-index: 20; }
+        #alphaNav a { font-family: 'Press Start 2P', cursive; font-size: 10px; color: #3498db; transition: color 0.2s, transform 0.2s; }
+        #alphaNav a:hover { color: #2ecc71; transform: scale(1.2); }
+        .form-input { background-color: #1a1a2e; border: 1px solid #3498db; color: white; border-radius: 5px; padding: 6px; transition: border-color 0.3s, box-shadow 0.3s; }
+        .form-input:focus { outline: none; border-color: #2ecc71; box-shadow: 0 0 10px #2ecc71; }
+        .btn { font-family: 'Press Start 2P', cursive; font-size: 10px; color: white; padding: 8px 12px; border-radius: 5px; transition: transform 0.2s, background-color 0.2s; cursor: pointer; }
+        .btn:hover { transform: scale(1.05); }
+        .btn-green { background-color: #27ae60; } .btn-green:hover { background-color: #2ecc71; }
+        .btn-blue { background-color: #2980b9; } .btn-blue:hover { background-color: #3498db; }
+        .btn-red { background-color: #c0392b; } .btn-red:hover { background-color: #e74c3c; }
+        .btn-gray { background-color: #7f8c8d; } .btn-gray:hover { background-color: #95a5a6; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body class="overflow-hidden">
+
+    <div id="lockScreen" class="fixed inset-0 bg-[#1a1a2e] z-[100] flex items-center justify-center p-4">
+        <div class="w-full max-w-md text-center">
+            <h1 class="font-title text-3xl text-cyan-300 mb-6">Accès Requis</h1>
+            <form id="accessForm">
+                <input type="password" id="accessKeyInput" class="form-input w-full text-center text-lg" placeholder="Entrez la clé d'accès...">
+                <p id="errorMessage" class="text-red-500 mt-2 h-6"></p>
+                <button type="submit" class="btn btn-green mt-4 !text-base">Déverrouiller</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="appContainer" class="hidden p-4 sm:p-6 lg:p-8">
+        <header class="text-center mb-8 flex justify-between items-center">
+            <h1 class="font-title text-2xl sm:text-3xl md:text-4xl text-cyan-300 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]">
+                <span class="text-red-500">P</span>oke<span class="text-red-500">D</span>ex
+            </h1>
+            <button id="addUserBtn" class="btn btn-green !text-xs sm:!text-sm hidden">Ajouter</button>
+        </header>
+
+        <main id="userGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 pr-10"></main>
+        <nav id="alphaNav"></nav>
+    </div>
+
+    <div id="userDetailModal" class="modal-container fixed inset-0 w-full h-full flex items-center justify-center hidden z-50 p-4"></div>
+    <div id="editUserModal" class="modal-container fixed inset-0 w-full h-full flex items-center justify-center hidden z-50 p-4"></div>
+    <div id="confirmModal" class="modal-container fixed inset-0 w-full h-full flex items-center justify-center hidden z-50 p-4"></div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.17.1/firebase-app.js";
+        import { getFirestore, doc, getDoc, collection, onSnapshot, setDoc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/9.17.1/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyB6O45gXB7n3n03byfbZ0a7A4TArfD7Ouk",
+            authDomain: "pokedex-bd94e.firebaseapp.com",
+            projectId: "pokedex-bd94e",
+            storageBucket: "pokedex-bd94e.appspot.com",
+            messagingSenderId: "993996335449",
+            appId: "1:993996335449:web:f31ab68726556d2a678448",
+            measurementId: "G-EKTV9DHBNV"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        const lockScreen = document.getElementById('lockScreen');
+        const appContainer = document.getElementById('appContainer');
+        const accessForm = document.getElementById('accessForm');
+        const accessKeyInput = document.getElementById('accessKeyInput');
+        const errorMessage = document.getElementById('errorMessage');
+        
+        const userGrid = document.getElementById('userGrid');
+        const alphaNav = document.getElementById('alphaNav');
+        const userDetailModal = document.getElementById('userDetailModal');
+        const editUserModal = document.getElementById('editUserModal');
+        const confirmModal = document.getElementById('confirmModal');
+        const addUserBtn = document.getElementById('addUserBtn');
+
+
+        async function checkAccessKey(key) {
+            try {
+                const keyDocRef = doc(db, "config", "keys");
+                const keyDocSnap = await getDoc(keyDocRef);
+                if (keyDocSnap.exists()) {
+                    const keys = keyDocSnap.data();
+                    if (keys.adminKey === key) return 'admin';
+                    if (keys.accessKey === key) return 'viewer';
+                }
+                return null;
+            } catch (error) {
+                console.error("Erreur de vérification de la clé:", error);
+                errorMessage.textContent = "Erreur de connexion à la base de données.";
+                return null;
+            }
+        }
+
+        accessForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const enteredKey = accessKeyInput.value;
+            errorMessage.textContent = "Vérification...";
+            
+            const role = await checkAccessKey(enteredKey);
+            
+            if (role) {
+                localStorage.setItem('userdex_access_key', enteredKey);
+                localStorage.setItem('userdex_user_role', role);
+                unlockApp(role);
+            } else {
+                errorMessage.textContent = "Clé d'accès incorrecte.";
+                accessKeyInput.value = "";
+            }
+        });
+
+        function unlockApp(role) {
+            lockScreen.classList.add('hidden');
+            appContainer.classList.remove('hidden');
+            document.body.classList.remove('overflow-hidden');
+            startApp(role);
+        }
+
+        
+        function startApp(role) {
+            if (role === 'admin') {
+                addUserBtn.classList.remove('hidden');
+                addUserBtn.onclick = () => renderEditModal();
+            } else {
+                addUserBtn.classList.add('hidden');
+            }
+
+            onSnapshot(collection(db, "users"), (querySnapshot) => {
+                const users = [];
+                querySnapshot.forEach((doc) => {
+                    users.push({ id: doc.id, ...doc.data() });
+                });
+                renderUserGrid(users, role);
+            });
+        }
+
+        function renderUserGrid(users, role) {
+            users.sort((a, b) => a.pseudo.localeCompare(b.pseudo));
+            userGrid.innerHTML = '';
+            alphaNav.innerHTML = '';
+
+            const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split('');
+            alphabet.forEach(letter => {
+                const link = document.createElement('a');
+                link.href = `#${letter}`;
+                link.textContent = letter;
+                alphaNav.appendChild(link);
+            });
+
+            let currentLetter = '';
+            users.forEach(user => {
+                const firstLetter = user.pseudo[0].toUpperCase();
+                if (firstLetter !== currentLetter) {
+                    currentLetter = firstLetter;
+                    const header = document.createElement('h2');
+                    header.className = 'letter-header font-title';
+                    header.id = `${currentLetter}`;
+                    header.textContent = currentLetter;
+                    userGrid.appendChild(header);
+                }
+
+                const card = document.createElement('div');
+                card.className = 'user-card rounded-lg py-4 px-2 text-left cursor-pointer flex flex-col justify-center h-36';
+                card.innerHTML = `<h3 class="text-lg font-bold text-cyan-300 truncate">${user.pseudo}</h3><p class="text-gray-400 text-xs mt-1">ID: ${user.id}</p>`;
+                card.addEventListener('click', () => renderDetailModal(user, role));
+                userGrid.appendChild(card);
+            });
+        }
+        
+        function renderDetailModal(user, role) {
+            const detailsHtml = user.details.map(detail => `
+                <div class="grid grid-cols-12 gap-x-2">
+                    <p class="font-bold text-cyan-300 col-span-4 text-left">${detail.title.toUpperCase()}:</p>
+                    <p class="text-white whitespace-pre-wrap col-span-8">${detail.content}</p>
+                </div>
+            `).join('');
+            const imageHtml = user.imageUrl ? `<img src="${user.imageUrl}" onerror="this.onerror=null;this.src='https://placehold.co/200x200/2c3e50/ffffff?text=Error';" class="w-full h-full object-cover" alt="Avatar">` : `<svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1"><path stroke-linecap="round" stroke-linejoin="round" d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`;
+            
+            const adminButtonsHtml = role === 'admin' ? `
+                <button class="btn btn-red" onclick="handleDeleteUser('${user.id}')">Supprimer</button>
+                <button class="btn btn-blue" onclick="renderEditModal('${user.id}')">Modifier</button>
+            ` : '';
+
+            userDetailModal.innerHTML = `
+                <div class="modal-content-body w-full max-w-2xl h-full max-h-[85vh] rounded-2xl shadow-2xl shadow-cyan-500/20 flex flex-col">
+                    <div class="pokedex-screen p-6 relative flex-grow flex flex-col overflow-hidden">
+                        <button onclick="closeModal(userDetailModal)" class="absolute top-4 right-4 text-3xl text-red-500 hover:text-red-400 transition-colors z-10">&times;</button>
+                        
+                        <div class="flex items-center gap-4 border-b-2 border-gray-500 pb-4 mb-4 flex-shrink-0">
+                            <div class="w-24 h-24 bg-gray-900 rounded-full flex items-center justify-center border-4 border-cyan-400 shadow-lg overflow-hidden flex-shrink-0">
+                                ${imageHtml}
+                            </div>
+                            <div>
+                                <h2 class="text-3xl font-bold text-white">${user.pseudo}</h2>
+                                <p class="text-sm text-gray-400">ID: ${user.id}</p>
+                            </div>
+                        </div>
+
+                        <div class="flex-grow text-lg space-y-2 overflow-y-auto pr-2">
+                            ${detailsHtml}
+                        </div>
+                    </div>
+                    <div class="flex-shrink-0 p-4 bg-gray-800/50 flex justify-end gap-4">
+                        ${adminButtonsHtml}
+                    </div>
+                </div>`;
+            openModal(userDetailModal);
+        }
+
+        function renderEditModal(userId = null) {
+            const isEditing = userId !== null;
+            
+            const userPromise = isEditing ? getDoc(doc(db, "users", userId)) : Promise.resolve(null);
+
+            userPromise.then(docSnap => {
+                const user = docSnap ? { id: docSnap.id, ...docSnap.data() } : null;
+
+                editUserModal.innerHTML = `
+                    <div class="modal-content-body w-full max-w-2xl max-h-[90vh] rounded-2xl shadow-2xl shadow-green-500/20 flex flex-col">
+                        <form id="editForm" class="flex flex-col flex-grow min-h-0">
+                            <h2 class="font-title text-xl text-green-400 p-4 flex-shrink-0">${isEditing ? 'Modifier Pokehaxor' : 'Nouveau Pokehaxor'}</h2>
+                            <div class="p-4 flex-grow overflow-y-auto space-y-3">
+                                ${isEditing 
+                                    ? `<div>
+                                           <label class="font-bold text-cyan-300 mb-1 block text-sm">ID du Document</label>
+                                           <input type="text" class="form-input w-full bg-gray-700 cursor-not-allowed" value="${user.id}" readonly>
+                                       </div>` 
+                                    : `<div>
+                                           <label class="font-bold text-cyan-300 mb-1 block text-sm">ID du Document</label>
+                                           <input type="text" name="docId" class="form-input w-full" placeholder="ID unique, ex: user01" required>
+                                       </div>`
+                                }
+                                <div><label class="font-bold text-cyan-300 mb-1 block text-sm">Pseudo</label><input type="text" name="pseudo" class="form-input w-full" value="${user?.pseudo || ''}" required></div>
+                                <div><label class="font-bold text-cyan-300 mb-1 block text-sm">URL de l'image (optionnel)</label><input type="url" name="imageUrl" class="form-input w-full" value="${user?.imageUrl || ''}"></div>
+                                <div id="detailsContainer" class="space-y-2"></div>
+                                <button type="button" id="addDetailBtn" class="btn btn-blue !text-xs mt-2">+ Ajouter une section</button>
+                            </div>
+                            <div class="flex-shrink-0 p-3 bg-gray-800/50 flex justify-end gap-4">
+                                <button type="button" class="btn btn-gray" onclick="closeModal(editUserModal)">Annuler</button>
+                                <button type="submit" class="btn btn-green">Sauvegarder</button>
+                            </div>
+                        </form>
+                    </div>`;
+
+                const detailsContainer = editUserModal.querySelector('#detailsContainer');
+                const addDetailRow = (title = '', content = '') => {
+                    const row = document.createElement('div');
+                    row.className = 'p-2 border border-gray-600 rounded-lg';
+                    row.innerHTML = `<div class="flex gap-2 items-center"><input type="text" placeholder="Titre" class="form-input w-1/3 text-sm detail-title" value="${title}" required><textarea placeholder="Contenu" class="form-input w-2/3 text-sm detail-content" rows="1" required>${content}</textarea><button type="button" class="btn btn-red !p-2 remove-detail-btn">&times;</button></div>`;
+                    detailsContainer.appendChild(row);
+                    row.querySelector('.remove-detail-btn').onclick = () => row.remove();
+                };
+
+                (user?.details || [{title: '', content: ''}]).forEach(d => addDetailRow(d.title, d.content));
+                
+                editUserModal.querySelector('#addDetailBtn').onclick = () => addDetailRow();
+                editUserModal.querySelector('#editForm').onsubmit = (e) => { e.preventDefault(); handleSaveUser(e.currentTarget, userId); };
+                
+                if (isEditing) closeModal(userDetailModal);
+                openModal(editUserModal);
+            });
+        }
+
+        async function handleSaveUser(form, userId) {
+            const formData = new FormData(form);
+            const detailTitles = Array.from(form.querySelectorAll('.detail-title')).map(i => i.value.trim());
+            const detailContents = Array.from(form.querySelectorAll('.detail-content')).map(i => i.value.trim());
+            const newDetails = detailTitles.map((title, index) => ({ title: title, content: detailContents[index] })).filter(d => d.title && d.content);
+            
+            const userData = {
+                pseudo: formData.get('pseudo').trim(),
+                imageUrl: formData.get('imageUrl').trim() || null,
+                details: newDetails
+            };
+
+            try {
+                if (userId) { 
+                    await updateDoc(doc(db, "users", userId), userData);
+                } else { 
+                    const newId = formData.get('docId').trim();
+                    if (!newId) {
+                        alert("L'ID du document est obligatoire.");
+                        return;
+                    }
+                    await setDoc(doc(db, "users", newId), userData);
+                }
+                closeModal(editUserModal);
+            } catch (error) {
+                console.error("Erreur de sauvegarde:", error);
+                alert("Une erreur est survenue lors de la sauvegarde.");
+            }
+        }
+
+        function handleDeleteUser(userId) {
+            showConfirm("Supprimer ce Pokehaxor ?", "Cette action est irréversible.", async () => {
+                try {
+                    await deleteDoc(doc(db, "users", userId));
+                    closeModal(userDetailModal);
+                    closeModal(confirmModal);
+                } catch (error) {
+                    console.error("Erreur de suppression:", error);
+                    alert("Une erreur est survenue lors de la suppression.");
+                }
+            });
+        }
+
+        window.openModal = (modalElement) => {
+            modalElement.classList.remove('hidden');
+            setTimeout(() => modalElement.querySelector('.modal-content-body, .p-6')?.classList.remove('scale-95', 'opacity-0'), 10);
+        }
+        window.closeModal = (modalElement) => {
+            modalElement.querySelector('.modal-content-body, .p-6')?.classList.add('scale-95', 'opacity-0');
+            setTimeout(() => modalElement.classList.add('hidden'), 300);
+        }
+        window.renderEditModal = renderEditModal;
+        window.handleDeleteUser = handleDeleteUser;
+
+        function showConfirm(title, text, onConfirm) {
+            confirmModal.innerHTML = `
+                <div class="modal-content-body w-full max-w-sm rounded-2xl shadow-2xl shadow-red-500/20 p-6 text-center transform transition-all duration-300 scale-95 opacity-0">
+                    <h2 class="font-title text-lg text-yellow-300 mb-4">${title}</h2>
+                    <p class="text-white mb-6">${text}</p>
+                    <div class="flex justify-center gap-4">
+                        <button id="confirmCancelBtn" class="btn btn-gray">Annuler</button>
+                        <button id="confirmOkBtn" class="btn btn-red">Confirmer</button>
+                    </div>
+                </div>`;
+            
+            openModal(confirmModal);
+
+            confirmModal.querySelector('#confirmOkBtn').onclick = onConfirm;
+            confirmModal.querySelector('#confirmCancelBtn').onclick = () => closeModal(confirmModal);
+        }
+
+        (async function init() {
+            const storedKey = localStorage.getItem('userdex_access_key');
+            if (storedKey) {
+                const role = await checkAccessKey(storedKey);
+                if (role) {
+                    localStorage.setItem('userdex_user_role', role);
+                    unlockApp(role);
+                } else {
+                    localStorage.removeItem('userdex_access_key');
+                    localStorage.removeItem('userdex_user_role');
+                }
+            }
+        })();
+    </script>
+</body>
+</html>

@@ -1,1 +1,0 @@
-# hehepokedex.github.io
